@@ -10,84 +10,19 @@ The Kubernetes [networking model](https://kubernetes.io/docs/concepts/cluster-ad
 
 > Setting up network policies is out of scope for this tutorial.
 
-### Virtual Private Cloud Network
+### Import an Existing SSH Key
 
-In this section a dedicated [Virtual Private Cloud](https://cloud.google.com/compute/docs/networks-and-firewalls#networks) (VPC) network will be setup to host the Kubernetes cluster.
-
-Create the `kubernetes-the-hard-way` custom VPC network:
+If you don't already have an ssh key, create one using GitHub's [documentation](https://help.github.com/articles/generating-a-new-ssh-key-and-adding-it-to-the-ssh-agent/)
 
 ```
-gcloud compute networks create kubernetes-the-hard-way --subnet-mode custom
+doctl compute ssh-key import new_key_name \
+  --public-key ~/.ssh/id_rsa.pub
 ```
 
-A [subnet](https://cloud.google.com/compute/docs/vpc/#vpc_networks_and_subnets) must be provisioned with an IP address range large enough to assign a private IP address to each node in the Kubernetes cluster.
-
-Create the `kubernetes` subnet in the `kubernetes-the-hard-way` VPC network:
+If you've already created an ssh key, get the ssh key's fingerprint. We'll use the fingerprint when we create our droplets.
 
 ```
-gcloud compute networks subnets create kubernetes \
-  --network kubernetes-the-hard-way \
-  --range 10.240.0.0/24
-```
-
-> The `10.240.0.0/24` IP address range can host up to 254 compute instances.
-
-### Firewall Rules
-
-Create a firewall rule that allows internal communication across all protocols:
-
-```
-gcloud compute firewall-rules create kubernetes-the-hard-way-allow-internal \
-  --allow tcp,udp,icmp \
-  --network kubernetes-the-hard-way \
-  --source-ranges 10.240.0.0/24,10.200.0.0/16
-```
-
-Create a firewall rule that allows external SSH, ICMP, and HTTPS:
-
-```
-gcloud compute firewall-rules create kubernetes-the-hard-way-allow-external \
-  --allow tcp:22,tcp:6443,icmp \
-  --network kubernetes-the-hard-way \
-  --source-ranges 0.0.0.0/0
-```
-
-> An [external load balancer](https://cloud.google.com/compute/docs/load-balancing/network/) will be used to expose the Kubernetes API Servers to remote clients.
-
-List the firewall rules in the `kubernetes-the-hard-way` VPC network:
-
-```
-gcloud compute firewall-rules list --filter="network:kubernetes-the-hard-way"
-```
-
-> output
-
-```
-NAME                                    NETWORK                  DIRECTION  PRIORITY  ALLOW                 DENY
-kubernetes-the-hard-way-allow-external  kubernetes-the-hard-way  INGRESS    1000      tcp:22,tcp:6443,icmp
-kubernetes-the-hard-way-allow-internal  kubernetes-the-hard-way  INGRESS    1000      tcp,udp,icmp
-```
-
-### Kubernetes Public IP Address
-
-Allocate a static IP address that will be attached to the external load balancer fronting the Kubernetes API Servers:
-
-```
-gcloud compute addresses create kubernetes-the-hard-way \
-  --region $(gcloud config get-value compute/region)
-```
-
-Verify the `kubernetes-the-hard-way` static IP address was created in your default compute region:
-
-```
-gcloud compute addresses list --filter="name=('kubernetes-the-hard-way')"
-```
-
-> output
-
-```
-NAME                     REGION    ADDRESS        STATUS
-kubernetes-the-hard-way  us-west1  XX.XXX.XXX.XX  RESERVED
+doctl compute ssh-key list
 ```
 
 ## Compute Instances
@@ -100,42 +35,29 @@ Create three compute instances which will host the Kubernetes control plane:
 
 ```
 for i in 0 1 2; do
-  gcloud compute instances create controller-${i} \
-    --async \
-    --boot-disk-size 200GB \
-    --can-ip-forward \
-    --image-family ubuntu-1804-lts \
-    --image-project ubuntu-os-cloud \
-    --machine-type n1-standard-1 \
-    --private-network-ip 10.240.0.1${i} \
-    --scopes compute-rw,storage-ro,service-management,service-control,logging-write,monitoring \
-    --subnet kubernetes \
-    --tags kubernetes-the-hard-way,controller
+  doctl compute droplet create controller-${i} \
+    --size s-1vcpu-2gb \
+    --image ubuntu-18-04-x64 \
+    --region sfo2 \
+    --enable-private-networking \
+    --ssh-keys "ssh:key:fingerprint:0a:0b" \
+    --tag-names kubernetes-the-hard-way,controller
 done
 ```
 
 ### Kubernetes Workers
 
-Each worker instance requires a pod subnet allocation from the Kubernetes cluster CIDR range. The pod subnet allocation will be used to configure container networking in a later exercise. The `pod-cidr` instance metadata will be used to expose pod subnet allocations to compute instances at runtime.
-
-> The Kubernetes cluster CIDR range is defined by the Controller Manager's `--cluster-cidr` flag. In this tutorial the cluster CIDR range will be set to `10.200.0.0/16`, which supports 254 subnets.
-
 Create three compute instances which will host the Kubernetes worker nodes:
 
 ```
 for i in 0 1 2; do
-  gcloud compute instances create worker-${i} \
-    --async \
-    --boot-disk-size 200GB \
-    --can-ip-forward \
-    --image-family ubuntu-1804-lts \
-    --image-project ubuntu-os-cloud \
-    --machine-type n1-standard-1 \
-    --metadata pod-cidr=10.200.${i}.0/24 \
-    --private-network-ip 10.240.0.2${i} \
-    --scopes compute-rw,storage-ro,service-management,service-control,logging-write,monitoring \
-    --subnet kubernetes \
-    --tags kubernetes-the-hard-way,worker
+  doctl compute droplet create worker-${i} \
+    --size s-1vcpu-2gb \
+    --image ubuntu-18-04-x64 \
+    --region sfo2 \
+    --enable-private-networking \
+    --ssh-keys "ssh:key:fingerprint:0a:0b" \
+    --tag-names kubernetes-the-hard-way,worker
 done
 ```
 
@@ -144,19 +66,19 @@ done
 List the compute instances in your default compute zone:
 
 ```
-gcloud compute instances list
+doctl compute droplet list
 ```
 
 > output
 
 ```
-NAME          ZONE        MACHINE_TYPE   PREEMPTIBLE  INTERNAL_IP  EXTERNAL_IP     STATUS
-controller-0  us-west1-c  n1-standard-1               10.240.0.10  XX.XXX.XXX.XXX  RUNNING
-controller-1  us-west1-c  n1-standard-1               10.240.0.11  XX.XXX.X.XX     RUNNING
-controller-2  us-west1-c  n1-standard-1               10.240.0.12  XX.XXX.XXX.XX   RUNNING
-worker-0      us-west1-c  n1-standard-1               10.240.0.20  XXX.XXX.XXX.XX  RUNNING
-worker-1      us-west1-c  n1-standard-1               10.240.0.21  XX.XXX.XX.XXX   RUNNING
-worker-2      us-west1-c  n1-standard-1               10.240.0.22  XXX.XXX.XX.XX   RUNNING
+ID           Name            Public IPv4        Private IPv4      Public IPv6    Memory    VCPUs    Disk    Region    Image               Status    Tags                                  Features              Volumes
+128594669    controller-0    XXX.XXX.XXX.XXX    10.138.154.27                    2048      1        50      sfo2      Ubuntu 18.04 x64    active    kubernetes-the-hard-way,controller    private_networking
+128594673    controller-1    XXX.XXX.XXX.XX     10.138.154.135                   2048      1        50      sfo2      Ubuntu 18.04 x64    active    kubernetes-the-hard-way,controller    private_networking
+128594681    controller-2    XXX.XXX.XXX.XX     10.138.154.173                   2048      1        50      sfo2      Ubuntu 18.04 x64    active    kubernetes-the-hard-way,controller    private_networking
+128594688    worker-0        XXX.XXX.XXX.XX     10.138.154.156                   2048      1        50      sfo2      Ubuntu 18.04 x64    active    kubernetes-the-hard-way,worker        private_networking
+128594689    worker-1        XXX.XXX.XXX.XX     10.138.90.73                     2048      1        50      sfo2      Ubuntu 18.04 x64    active    kubernetes-the-hard-way,worker        private_networking
+128594691    worker-2        XXX.XXX.XXX.XX     10.138.90.77                     2048      1        50      sfo2      Ubuntu 18.04 x64    active    kubernetes-the-hard-way,worker        private_networking
 ```
 
 ## Configuring SSH Access
@@ -166,59 +88,27 @@ SSH will be used to configure the controller and worker instances. When connecti
 Test SSH access to the `controller-0` compute instances:
 
 ```
-gcloud compute ssh controller-0
+doctl compute ssh controller-0
 ```
 
-If this is your first time connecting to a compute instance SSH keys will be generated for you. Enter a passphrase at the prompt to continue:
+You'll be logged into the `controller-0` instance:
 
 ```
-WARNING: The public SSH key file for gcloud does not exist.
-WARNING: The private SSH key file for gcloud does not exist.
-WARNING: You do not have an SSH key for gcloud.
-WARNING: SSH keygen will be executed to generate a key.
-Generating public/private rsa key pair.
-Enter passphrase (empty for no passphrase):
-Enter same passphrase again:
-```
+Welcome to Ubuntu 18.04.1 LTS (GNU/Linux 4.15.0-42-generic x86_64)
 
-At this point the generated SSH keys will be uploaded and stored in your project:
-
-```
-Your identification has been saved in /home/$USER/.ssh/google_compute_engine.
-Your public key has been saved in /home/$USER/.ssh/google_compute_engine.pub.
-The key fingerprint is:
-SHA256:nz1i8jHmgQuGt+WscqP5SeIaSy5wyIJeL71MuV+QruE $USER@$HOSTNAME
-The key's randomart image is:
-+---[RSA 2048]----+
-|                 |
-|                 |
-|                 |
-|        .        |
-|o.     oS        |
-|=... .o .o o     |
-|+.+ =+=.+.X o    |
-|.+ ==O*B.B = .   |
-| .+.=EB++ o      |
-+----[SHA256]-----+
-Updating project ssh metadata...-Updated [https://www.googleapis.com/compute/v1/projects/$PROJECT_ID].
-Updating project ssh metadata...done.
-Waiting for SSH key to propagate.
-```
-
-After the SSH keys have been updated you'll be logged into the `controller-0` instance:
-
-```
-Welcome to Ubuntu 18.04 LTS (GNU/Linux 4.15.0-1006-gcp x86_64)
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
 
 ...
 
-Last login: Sun May 13 14:34:27 2018 from XX.XXX.XXX.XX
+root@controller-0:~#
 ```
 
 Type `exit` at the prompt to exit the `controller-0` compute instance:
 
 ```
-$USER@controller-0:~$ exit
+root@controller-0:~$ exit
 ```
 > output
 

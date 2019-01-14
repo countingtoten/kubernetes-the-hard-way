@@ -86,6 +86,12 @@ chmod +x kubectl
 sudo mv kubectl /usr/local/bin/
 ```
 
+Alternatively, install `kubectl` via [Homebrew](https://brew.sh).
+
+```
+brew install kubernetes-cli
+```
+
 ### Linux
 
 ```
@@ -111,7 +117,7 @@ kubectl version --client
 > output
 
 ```
-Client Version: version.Info{Major:"1", Minor:"12", GitVersion:"v1.12.0", GitCommit:"0ed33881dc4355495f623c6f22e7dd0b7632b7c0", GitTreeState:"clean", BuildDate:"2018-09-27T17:05:32Z", GoVersion:"go1.10.4", Compiler:"gc", Platform:"linux/amd64"}
+Client Version: version.Info{Major:"1", Minor:"13", GitVersion:"v1.13.1", GitCommit:"eec55b9ba98609a46fee712359c7b5b365bdd920", GitTreeState:"clean", BuildDate:"2018-12-13T19:44:19Z", GoVersion:"go1.11.2", Compiler:"gc", Platform:"darwin/amd64"}
 ```
 
 Next: [Provisioning Compute Resources](03-compute-resources.md)
