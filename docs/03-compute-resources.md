@@ -117,4 +117,22 @@ logout
 Connection to XX.XXX.XXX.XXX closed
 ```
 
+## Load Balancer
+
+Create a load balancer to redirect traffic to our three controller nodes.
+
+```
+doctl compute load-balancer create \
+  --name load-balancer \
+  --region sfo2 \
+  --forwarding-rules entry_protocol:http,entry_port:80,target_protocol:http,target_port:80 \
+  --tag-name controller
+```
+
+## Kubernetes Public IP Address
+
+```
+KUBERNETES_PUBLIC_ADDRESS=$(doctl compute load-balancer list | grep controller | awk '{ print $2 }')
+```
+
 Next: [Provisioning a CA and Generating TLS Certificates](04-certificate-authority.md)
