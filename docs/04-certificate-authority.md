@@ -9,8 +9,6 @@ In this section you will provision a Certificate Authority that can be used to g
 Generate the CA configuration file, certificate, and private key:
 
 ```
-{
-
 cat > ca-config.json <<EOF
 {
   "signing": {
@@ -37,18 +35,16 @@ cat > ca-csr.json <<EOF
   "names": [
     {
       "C": "US",
-      "L": "Portland",
+      "L": "Austin",
       "O": "Kubernetes",
       "OU": "CA",
-      "ST": "Oregon"
+      "ST": "Texas"
     }
   ]
 }
 EOF
 
 cfssl gencert -initca ca-csr.json | cfssljson -bare ca
-
-}
 ```
 
 Results:
@@ -67,8 +63,6 @@ In this section you will generate client and server certificates for each Kubern
 Generate the `admin` client certificate and private key:
 
 ```
-{
-
 cat > admin-csr.json <<EOF
 {
   "CN": "admin",
@@ -79,10 +73,10 @@ cat > admin-csr.json <<EOF
   "names": [
     {
       "C": "US",
-      "L": "Portland",
+      "L": "Austin",
       "O": "system:masters",
       "OU": "Kubernetes The Hard Way",
-      "ST": "Oregon"
+      "ST": "Texas"
     }
   ]
 }
@@ -94,8 +88,6 @@ cfssl gencert \
   -config=ca-config.json \
   -profile=kubernetes \
   admin-csr.json | cfssljson -bare admin
-
-}
 ```
 
 Results:
@@ -112,7 +104,9 @@ Kubernetes uses a [special-purpose authorization mode](https://kubernetes.io/doc
 Generate a certificate and private key for each Kubernetes worker node:
 
 ```
-for instance in worker-0 worker-1 worker-2; do
+for instance_id in "${(@f)$(doctl compute droplet list --tag-name worker --no-header --format ID)}"; do
+instance=$(doctl compute droplet get $instance_id --template {{.Name}})
+
 cat > ${instance}-csr.json <<EOF
 {
   "CN": "system:node:${instance}",
@@ -123,20 +117,18 @@ cat > ${instance}-csr.json <<EOF
   "names": [
     {
       "C": "US",
-      "L": "Portland",
+      "L": "Austin",
       "O": "system:nodes",
       "OU": "Kubernetes The Hard Way",
-      "ST": "Oregon"
+      "ST": "Texas"
     }
   ]
 }
 EOF
 
-EXTERNAL_IP=$(gcloud compute instances describe ${instance} \
-  --format 'value(networkInterfaces[0].accessConfigs[0].natIP)')
+EXTERNAL_IP=$(doctl compute droplet get $instance_id --template {{.PublicIPv4}})
 
-INTERNAL_IP=$(gcloud compute instances describe ${instance} \
-  --format 'value(networkInterfaces[0].networkIP)')
+INTERNAL_IP=$(doctl compute droplet get $instance_id --template {{.PrivateIPv4}})
 
 cfssl gencert \
   -ca=ca.pem \
@@ -164,8 +156,6 @@ worker-2.pem
 Generate the `kube-controller-manager` client certificate and private key:
 
 ```
-{
-
 cat > kube-controller-manager-csr.json <<EOF
 {
   "CN": "system:kube-controller-manager",
@@ -176,10 +166,10 @@ cat > kube-controller-manager-csr.json <<EOF
   "names": [
     {
       "C": "US",
-      "L": "Portland",
+      "L": "Austin",
       "O": "system:kube-controller-manager",
       "OU": "Kubernetes The Hard Way",
-      "ST": "Oregon"
+      "ST": "Texas"
     }
   ]
 }
@@ -191,8 +181,6 @@ cfssl gencert \
   -config=ca-config.json \
   -profile=kubernetes \
   kube-controller-manager-csr.json | cfssljson -bare kube-controller-manager
-
-}
 ```
 
 Results:
@@ -208,8 +196,6 @@ kube-controller-manager.pem
 Generate the `kube-proxy` client certificate and private key:
 
 ```
-{
-
 cat > kube-proxy-csr.json <<EOF
 {
   "CN": "system:kube-proxy",
@@ -220,10 +206,10 @@ cat > kube-proxy-csr.json <<EOF
   "names": [
     {
       "C": "US",
-      "L": "Portland",
+      "L": "Austin",
       "O": "system:node-proxier",
       "OU": "Kubernetes The Hard Way",
-      "ST": "Oregon"
+      "ST": "Texas"
     }
   ]
 }
@@ -235,8 +221,6 @@ cfssl gencert \
   -config=ca-config.json \
   -profile=kubernetes \
   kube-proxy-csr.json | cfssljson -bare kube-proxy
-
-}
 ```
 
 Results:
@@ -251,35 +235,7 @@ kube-proxy.pem
 Generate the `kube-scheduler` client certificate and private key:
 
 ```
-{
-
-cat > kube-scheduler-csr.json <<EOF
-{
-  "CN": "system:kube-scheduler",
-  "key": {
-    "algo": "rsa",
-    "size": 2048
-  },
-  "names": [
-    {
-      "C": "US",
-      "L": "Portland",
-      "O": "system:kube-scheduler",
-      "OU": "Kubernetes The Hard Way",
-      "ST": "Oregon"
-    }
-  ]
-}
-EOF
-
-cfssl gencert \
-  -ca=ca.pem \
-  -ca-key=ca-key.pem \
-  -config=ca-config.json \
-  -profile=kubernetes \
-  kube-scheduler-csr.json | cfssljson -bare kube-scheduler
-
-}
+l
 ```
 
 Results:
@@ -297,11 +253,8 @@ The `kubernetes-the-hard-way` static IP address will be included in the list of 
 Generate the Kubernetes API Server certificate and private key:
 
 ```
-{
-
-KUBERNETES_PUBLIC_ADDRESS=$(gcloud compute addresses describe kubernetes-the-hard-way \
-  --region $(gcloud config get-value compute/region) \
-  --format 'value(address)')
+KUBERNETES_PUBLIC_ADDRESS=$(doctl compute load-balancer list | grep controller | awk '{ print $2 }')
+CONTROLLER_PRIVATE_ADDRESSES=$(doctl compute droplet list --tag-name controller --no-header --format PrivateIPv4 | paste -sd "," -)
 
 cat > kubernetes-csr.json <<EOF
 {
@@ -313,10 +266,10 @@ cat > kubernetes-csr.json <<EOF
   "names": [
     {
       "C": "US",
-      "L": "Portland",
+      "L": "Austin",
       "O": "Kubernetes",
       "OU": "Kubernetes The Hard Way",
-      "ST": "Oregon"
+      "ST": "Texas"
     }
   ]
 }
@@ -326,11 +279,9 @@ cfssl gencert \
   -ca=ca.pem \
   -ca-key=ca-key.pem \
   -config=ca-config.json \
-  -hostname=10.32.0.1,10.240.0.10,10.240.0.11,10.240.0.12,${KUBERNETES_PUBLIC_ADDRESS},127.0.0.1,kubernetes.default \
+  -hostname=10.32.0.1,${CONTROLLER_PRIVATE_ADDRESSES},${KUBERNETES_PUBLIC_ADDRESS},127.0.0.1,kubernetes.default \
   -profile=kubernetes \
   kubernetes-csr.json | cfssljson -bare kubernetes
-
-}
 ```
 
 Results:
@@ -347,8 +298,6 @@ The Kubernetes Controller Manager leverages a key pair to generate and sign serv
 Generate the `service-account` certificate and private key:
 
 ```
-{
-
 cat > service-account-csr.json <<EOF
 {
   "CN": "service-accounts",
@@ -359,10 +308,10 @@ cat > service-account-csr.json <<EOF
   "names": [
     {
       "C": "US",
-      "L": "Portland",
+      "L": "Austin",
       "O": "Kubernetes",
       "OU": "Kubernetes The Hard Way",
-      "ST": "Oregon"
+      "ST": "Texas"
     }
   ]
 }
@@ -374,8 +323,6 @@ cfssl gencert \
   -config=ca-config.json \
   -profile=kubernetes \
   service-account-csr.json | cfssljson -bare service-account
-
-}
 ```
 
 Results:
@@ -391,19 +338,26 @@ service-account.pem
 Copy the appropriate certificates and private keys to each worker instance:
 
 ```
-for instance in worker-0 worker-1 worker-2; do
-  gcloud compute scp ca.pem ${instance}-key.pem ${instance}.pem ${instance}:~/
+for instance_id in "${(@f)$(doctl compute droplet list --tag-name worker --no-header --format ID)}"; do
+  instance=$(doctl compute droplet get $instance_id --template {{.Name}})
+  ip_address=$(doctl compute droplet get $instance_id --template {{.PublicIPv4}})
+
+  scp -i ~/.ssh/id_rsa ca.pem ${instance}-key.pem ${instance}.pem root@${ip_address}:~/
 done
 ```
 
 Copy the appropriate certificates and private keys to each controller instance:
 
 ```
-for instance in controller-0 controller-1 controller-2; do
-  gcloud compute scp ca.pem ca-key.pem kubernetes-key.pem kubernetes.pem \
-    service-account-key.pem service-account.pem ${instance}:~/
+for instance_id in "${(@f)$(doctl compute droplet list --tag-name controller --no-header --format ID)}"; do
+  instance=$(doctl compute droplet get $instance_id --template {{.Name}})
+  ip_address=$(doctl compute droplet get $instance_id --template {{.PublicIPv4}})
+
+  scp -i ~/.ssh/id_rsa ca.pem ca-key.pem kubernetes-key.pem kubernetes.pem \
+    service-account-key.pem service-account.pem root@${ip_address}:~/
 done
 ```
+scp -i ~/.ssh/private_key local_file remote_host:/path/remote_file
 
 > The `kube-proxy`, `kube-controller-manager`, `kube-scheduler`, and `kubelet` client certificates will be used to generate client authentication configuration files in the next lab.
 
