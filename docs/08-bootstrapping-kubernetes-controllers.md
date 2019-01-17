@@ -4,10 +4,10 @@ In this lab you will bootstrap the Kubernetes control plane across three compute
 
 ## Prerequisites
 
-The commands in this lab must be run on each controller instance: `controller-0`, `controller-1`, and `controller-2`. Login to each controller instance using the `gcloud` command. Example:
+The commands in this lab must be run on each controller instance: `controller-0`, `controller-1`, and `controller-2`. Login to each controller instance using the `doctl` command. Example:
 
 ```
-gcloud compute ssh controller-0
+doctl compute ssh controller-0
 ```
 
 ### Running commands in parallel with tmux
@@ -58,8 +58,13 @@ Install the Kubernetes binaries:
 The instance internal IP address will be used to advertise the API Server to members of the cluster. Retrieve the internal IP address for the current compute instance:
 
 ```
-INTERNAL_IP=$(curl -s -H "Metadata-Flavor: Google" \
-  http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/ip)
+INTERNAL_IP=$(curl http://169.254.169.254/metadata/v1/interfaces/private/0/ipv4/address)
+```
+
+The etcd addresses are needed by every controllers. On your machine run the following command and set the environment variable on each controller:
+
+```
+ETCD_SERVERS=$(doctl compute droplet list --tag-name controller --format "PrivateIPv4" --no-header | awk '{u="https://" $1 ":2379"; print u}' | paste -sd "," -)
 ```
 
 Create the `kube-apiserver.service` systemd unit file:
@@ -87,7 +92,7 @@ ExecStart=/usr/local/bin/kube-apiserver \\
   --etcd-cafile=/var/lib/kubernetes/ca.pem \\
   --etcd-certfile=/var/lib/kubernetes/kubernetes.pem \\
   --etcd-keyfile=/var/lib/kubernetes/kubernetes-key.pem \\
-  --etcd-servers=https://10.240.0.10:2379,https://10.240.0.11:2379,https://10.240.0.12:2379 \\
+  --etcd-servers=${ETCD_SERVERS} \\
   --event-ttl=1h \\
   --experimental-encryption-provider-config=/var/lib/kubernetes/encryption-config.yaml \\
   --kubelet-certificate-authority=/var/lib/kubernetes/ca.pem \\
@@ -194,7 +199,7 @@ EOF
 {
   sudo systemctl daemon-reload
   sudo systemctl enable kube-apiserver kube-controller-manager kube-scheduler
-  sudo systemctl start kube-apiserver kube-controller-manager kube-scheduler
+  sudo systemctl status kube-apiserver kube-controller-manager kube-scheduler
 }
 ```
 
@@ -202,7 +207,9 @@ EOF
 
 ### Enable HTTP Health Checks
 
-A [Google Network Load Balancer](https://cloud.google.com/compute/docs/load-balancing/network) will be used to distribute traffic across the three API servers and allow each API server to terminate TLS connections and validate client certificates. The network load balancer only supports HTTP health checks which means the HTTPS endpoint exposed by the API server cannot be used. As a workaround the nginx webserver can be used to proxy HTTP health checks. In this section nginx will be installed and configured to accept HTTP health checks on port `80` and proxy the connections to the API server on `https://127.0.0.1:6443/healthz`.
+TODO: Is this necessary?
+
+A [DigitalOcean Load Balancer](https://www.digitalocean.com/products/load-balancer/) will be used to distribute traffic across the three API servers and allow each API server to terminate TLS connections and validate client certificates. The network load balancer only supports HTTP health checks which means the HTTPS endpoint exposed by the API server cannot be used. As a workaround the nginx webserver can be used to proxy HTTP health checks. In this section nginx will be installed and configured to accept HTTP health checks on port `80` and proxy the connections to the API server on `https://127.0.0.1:6443/healthz`.
 
 > The `/healthz` API server endpoint does not require authentication by default.
 
@@ -284,7 +291,7 @@ In this section you will configure RBAC permissions to allow the Kubernetes API 
 > This tutorial sets the Kubelet `--authorization-mode` flag to `Webhook`. Webhook mode uses the [SubjectAccessReview](https://kubernetes.io/docs/admin/authorization/#checking-api-access) API to determine authorization.
 
 ```
-gcloud compute ssh controller-0
+doctl compute ssh controller-0
 ```
 
 Create the `system:kube-apiserver-to-kubelet` [ClusterRole](https://kubernetes.io/docs/admin/authorization/rbac/#role-and-clusterrole) with permissions to access the Kubelet API and perform most common tasks associated with managing pods:
@@ -337,6 +344,14 @@ EOF
 
 ## The Kubernetes Frontend Load Balancer
 
+TODO: Figure out how to tie the host to the load balancer health request or update the above nginx config. We can't add a host to the health requests for the DigitalOcean load balancer. But you can query the health route from the servers
+
+```
+curl -H "Host: kubernetes.default.svc.cluster.local" -i http://127.0.0.1/healthz
+curl --cacert /var/lib/kubernetes/ca.pem https://127.0.0.1:6443/healthz
+curl --cacert /var/lib/kubernetes/ca.pem https://127.0.0.1:6443/version
+```
+
 In this section you will provision an external load balancer to front the Kubernetes API Servers. The `kubernetes-the-hard-way` static IP address will be attached to the resulting load balancer.
 
 > The compute instances created in this tutorial will not have permission to complete this section. Run the following commands from the same machine used to create the compute instances.
@@ -381,9 +396,7 @@ Create the external load balancer network resources:
 Retrieve the `kubernetes-the-hard-way` static IP address:
 
 ```
-KUBERNETES_PUBLIC_ADDRESS=$(gcloud compute addresses describe kubernetes-the-hard-way \
-  --region $(gcloud config get-value compute/region) \
-  --format 'value(address)')
+KUBERNETES_PUBLIC_ADDRESS=$(doctl compute load-balancer list | grep controller | awk '{ print $2 }')
 ```
 
 Make a HTTP request for the Kubernetes version info:

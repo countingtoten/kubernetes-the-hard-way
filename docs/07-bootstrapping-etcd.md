@@ -55,7 +55,7 @@ Each etcd member must have a unique name within an etcd cluster. Set the etcd na
 ETCD_NAME=$(hostname -s)
 ```
 
-The etcd cluster requries the host names and ip addresses of each of the other etc controllers. On your machine run the following command and set the environment variable on each controller:
+The etcd cluster requires the host names and ip addresses of each of the other etc controllers. On your machine run the following command and set the environment variable on each controller:
 
 ```
 ETCD_CLUSTER=$(doctl compute droplet list --tag-name controller --format "Name,PrivateIPv4" --no-header | awk '{u=$1 "=https://" $2 ":2380"; print u}' | paste -sd "," -)
