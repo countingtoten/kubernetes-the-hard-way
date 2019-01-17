@@ -125,7 +125,7 @@ Create a load balancer to redirect traffic to our three controller nodes.
 doctl compute load-balancer create \
   --name load-balancer \
   --region sfo2 \
-  --forwarding-rules entry_protocol:http,entry_port:80,target_protocol:http,target_port:80 \
+  --forwarding-rules "entry_protocol:http,entry_port:80,target_protocol:http,target_port:80 entry_protocol:http,entry_port:6443,target_protocol:http,target_port:6443" \
   --tag-name controller
 ```
 
