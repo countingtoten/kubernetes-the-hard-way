@@ -4,10 +4,10 @@ Kubernetes components are stateless and store cluster state in [etcd](https://gi
 
 ## Prerequisites
 
-The commands in this lab must be run on each controller instance: `controller-0`, `controller-1`, and `controller-2`. Login to each controller instance using the `gcloud` command. Example:
+The commands in this lab must be run on each controller instance: `controller-0`, `controller-1`, and `controller-2`. Login to each controller instance using the `doctl` command. Example:
 
 ```
-gcloud compute ssh controller-0
+doctl compute ssh controller-0
 ```
 
 ### Running commands in parallel with tmux
@@ -43,17 +43,22 @@ Extract and install the `etcd` server and the `etcdctl` command line utility:
 }
 ```
 
-The instance internal IP address will be used to serve client requests and communicate with etcd cluster peers. Retrieve the internal IP address for the current compute instance:
+The instance internal IP address will be used to serve client requests and communicate with etcd cluster peers. Retrieve the internal IP address for the current compute instance from the [metadate endpoints](https://developers.digitalocean.com/documentation/metadata/#interface-ipv4-address):
 
 ```
-INTERNAL_IP=$(curl -s -H "Metadata-Flavor: Google" \
-  http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/ip)
+INTERNAL_IP=$(curl http://169.254.169.254/metadata/v1/interfaces/private/0/ipv4/address)
 ```
 
 Each etcd member must have a unique name within an etcd cluster. Set the etcd name to match the hostname of the current compute instance:
 
 ```
 ETCD_NAME=$(hostname -s)
+```
+
+The etcd cluster requries the host names and ip addresses of each of the other etc controllers. On your machine run the following command and set the environment variable on each controller:
+
+```
+ETCD_CLUSTER=$(doctl compute droplet list --tag-name controller --format "Name,PrivateIPv4" --no-header | awk '{u=$1 "=https://" $2 ":2380"; print u}' | paste -sd "," -)
 ```
 
 Create the `etcd.service` systemd unit file:
@@ -80,7 +85,7 @@ ExecStart=/usr/local/bin/etcd \\
   --listen-client-urls https://${INTERNAL_IP}:2379,https://127.0.0.1:2379 \\
   --advertise-client-urls https://${INTERNAL_IP}:2379 \\
   --initial-cluster-token etcd-cluster-0 \\
-  --initial-cluster controller-0=https://10.240.0.10:2380,controller-1=https://10.240.0.11:2380,controller-2=https://10.240.0.12:2380 \\
+  --initial-cluster ${ETCD_CLUSTER} \\
   --initial-cluster-state new \\
   --data-dir=/var/lib/etcd
 Restart=on-failure

@@ -35,8 +35,11 @@ EOF
 Copy the `encryption-config.yaml` encryption config file to each controller instance:
 
 ```
-for instance in controller-0 controller-1 controller-2; do
-  gcloud compute scp encryption-config.yaml ${instance}:~/
+for instance_id in "${(@f)$(doctl compute droplet list --tag-name controller --no-header --format ID)}"; do
+  instance=$(doctl compute droplet get $instance_id --template {{.Name}})
+  ip_address=$(doctl compute droplet get $instance_id --template {{.PublicIPv4}})
+
+  scp -i ~/.ssh/id_rsa encryption-config.yaml root@${ip_address}:~/
 done
 ```
 
