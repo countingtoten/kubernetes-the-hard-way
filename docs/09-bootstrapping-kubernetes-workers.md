@@ -7,7 +7,7 @@ In this lab you will bootstrap three Kubernetes worker nodes. The following comp
 The commands in this lab must be run on each worker instance: `worker-0`, `worker-1`, and `worker-2`. Login to each worker instance using the `gcloud` command. Example:
 
 ```
-gcloud compute ssh worker-0
+doctl compute ssh worker-0
 ```
 
 ### Running commands in parallel with tmux
@@ -72,8 +72,7 @@ Install the worker binaries:
 Retrieve the Pod CIDR range for the current compute instance:
 
 ```
-POD_CIDR=$(curl -s -H "Metadata-Flavor: Google" \
-  http://metadata.google.internal/computeMetadata/v1/instance/attributes/pod-cidr)
+POD_CIDR=10.22.0.0/16
 ```
 
 Create the `bridge` network configuration file:
@@ -201,7 +200,7 @@ tlsPrivateKeyFile: "/var/lib/kubelet/${HOSTNAME}-key.pem"
 EOF
 ```
 
-> The `resolvConf` configuration is used to avoid loops when using CoreDNS for service discovery on systems running `systemd-resolved`. 
+> The `resolvConf` configuration is used to avoid loops when using CoreDNS for service discovery on systems running `systemd-resolved`.
 
 Create the `kubelet.service` systemd unit file:
 
@@ -246,7 +245,6 @@ apiVersion: kubeproxy.config.k8s.io/v1alpha1
 clientConnection:
   kubeconfig: "/var/lib/kube-proxy/kubeconfig"
 mode: "iptables"
-clusterCIDR: "10.200.0.0/16"
 EOF
 ```
 
@@ -288,8 +286,8 @@ EOF
 List the registered Kubernetes nodes:
 
 ```
-gcloud compute ssh controller-0 \
-  --command "kubectl get nodes --kubeconfig admin.kubeconfig"
+doctl compute ssh controller-0 \
+  --ssh-command "kubectl get nodes --kubeconfig admin.kubeconfig"
 ```
 
 > output
